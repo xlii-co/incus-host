@@ -177,21 +177,41 @@ change, since those are `deploy.sh`'s own concern, not the reconciler's.
 The reconciler's real privilege today is "full root on this Incus
 daemon," used narrowly. A genuinely least-privilege version would give it
 an identity that can only read instance configs and reload `ingress`
-specifically — nothing else. Incus's own restricted-client mechanism
-(`authorization.client.tls-restricted`, already referenced in
-`daemon/server-config.yaml` for a different purpose, backed by the same
-Starlark scriptlet authorization model `daemon/authorization.star` already
-uses for OIDC) is the most likely place this would live — mint the
-reconciler a TLS client certificate, and have the scriptlet's `authorize()`
-function grant it exactly the two permissions it needs rather than the
-current "anyone through OIDC, or the local socket, gets everything" logic.
-Genuinely unresolved whether Incus's scriptlet model can express
-per-identity, per-instance, per-action grants this granular, or whether it
-only really distinguishes coarser classes of client (as it does today,
-`oidc` vs `tls` vs `tls-restricted`, without acting differently based on
-*which* restricted client it is). Worth a real investigation before
-building it — not assumed to be straightforward just because the pieces
-exist.
+specifically — nothing else.
+
+**Confirmed possible in principle, 2026-09-16, against Incus's actual
+authorization docs** — the mechanism just isn't wired up yet. The
+scriptlet's `authorize(details, object, entitlement)` function (Starlark;
+`daemon/authorization.star` already has one, routed to via
+`authorization.client.{oidc,tls,tls-restricted}` in
+`daemon/server-config.yaml`) receives real per-identity, per-resource
+granularity, not just a client class:
+
+- `details.Username` — for a TLS client, this is the **certificate's
+  fingerprint**, individually distinguishable. Mint the reconciler its
+  own certificate, and the scriptlet can check for that exact fingerprint
+  rather than "any TLS client."
+- `object` — the specific resource the request is about (a specific
+  instance, e.g. `ingress`, not "any instance").
+- `entitlement` — the specific permission requested (view vs. exec vs.
+  update are distinct, not one blob).
+
+So `authorize()` can express "this exact identity, on this exact object,
+for this exact action" — in principle, an instance-and-action-scoped
+grant for the reconciler is expressible. There's also a coarser,
+zero-custom-code layer worth using as a first step regardless:
+`incus config trust add --restricted --projects default` mints a
+certificate Incus itself confines to one project and blocks from any
+global server config change, no scriptlet logic needed at all — real
+restriction, just project-granularity rather than instance-granularity.
+
+**Still unresolved**: how much scriptlet logic the finer, instance-level
+check actually takes to get right in practice — whether matching `object`
+against "specifically the `ingress` instance" is a one-line comparison or
+something messier once real code is written against it, and whether
+issuing/rotating a dedicated certificate for a cron-run host script is
+worth the operational overhead versus the coarser project-restricted
+option above. Worth prototyping before deciding, not assumed either way.
 
 ## Trigger
 
