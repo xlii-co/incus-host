@@ -38,8 +38,16 @@ being true, look at OpenFGA instead of growing the scriptlet.
 | `scripts/generate-authelia-secrets.sh` | one-time per host: generates every secret via Authelia's own CLI |
 | `scripts/publish-incus-ui.sh` | builds + pushes the `incus-ui` image to your registry |
 | `scripts/deploy.sh` | applies everything above to whatever host `incus` is pointed at |
+| `scripts/push-to-host.sh` | syncs this repo's tracked files to a host, for the scripts above to run there — see below |
 
 ## Apply order (fresh host)
+
+This repo lives on your dev machine, but every script here shells out to
+the local `incus`/`podman` CLI, so they only run *on* the target host, not
+from wherever you cloned this. `scripts/push-to-host.sh` bridges that gap:
+it syncs exactly this repo's tracked files over, leaving secrets,
+deploy.env, and users_database.yml (all host-owned, all .gitignored — see
+"Secrets — NOT in this repo" below) untouched wherever they already are.
 
 Assumes an Incus daemon already exists on the target (storage pool,
 `incus` CLI pointed at it — see `nightscout-podman/incus/preseed.yaml` for
@@ -47,6 +55,9 @@ how that gets bootstrapped in the first place) and both domains' DNS
 already resolve to it.
 
 ```
+scripts/push-to-host.sh <user@host>   # first time: creates ~/incus-host there
+ssh <user@host>
+cd incus-host
 cp deploy.env.example deploy.env    # fill in
 scripts/publish-incus-ui.sh          # needs: podman login <your registry>
 scripts/generate-authelia-secrets.sh # needs: podman (pulls authelia/authelia once)
