@@ -36,7 +36,8 @@ being true, look at OpenFGA instead of growing the scriptlet.
 | `daemon/authorization.star` | the whole authorization policy — see above |
 | `daemon/server-config.yaml` | Incus server-config template (OIDC, authorization, trusted proxy); applied as one `incus config edit`, same pattern as the profile templates above |
 | `scripts/generate-authelia-secrets.sh` | one-time per host: generates every secret via Authelia's own CLI |
-| `scripts/publish-incus-ui.sh` | builds + pushes the `incus-ui` image to your registry |
+| `scripts/publish-incus-ui.sh` | local build + push of the `incus-ui` image — for a non-GHCR registry, or to smoke-test a build; see below |
+| `.github/workflows/publish-incus-ui.yml` | same publish, built on GitHub's infra instead — `gh workflow run publish-incus-ui.yml -f tag=<tag>`, still manual-only |
 | `scripts/deploy.sh` | applies everything above to whatever host `incus` is pointed at |
 | `scripts/push-to-host.sh` | syncs this repo's tracked files to a host, for the scripts above to run there — see below |
 
@@ -59,7 +60,8 @@ scripts/push-to-host.sh <user@host>   # first time: creates ~/incus-host there
 ssh <user@host>
 cd incus-host
 cp deploy.env.example deploy.env    # fill in
-scripts/publish-incus-ui.sh          # needs: podman login <your registry>
+# IMAGE_REGISTRY=ghcr.io/<owner>: gh workflow run publish-incus-ui.yml -f tag=latest
+# anything else:                 scripts/publish-incus-ui.sh   (needs: podman login <your registry>)
 scripts/generate-authelia-secrets.sh # needs: podman (pulls authelia/authelia once)
 # fill in authelia/users_database.yml from users_database.yml.example,
 # using the password hash generate-authelia-secrets.sh just printed

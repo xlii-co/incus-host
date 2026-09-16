@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Manual publish step for incus-ui's image. NOT run by CI, on purpose —
-# same policy nightscout-podman uses for its own OCI pilot: deploying (and
-# here, publishing) stays a manual, confirmed step, not something that
-# fires on every push.
+# Manual, local publish step for incus-ui's image — for a registry that
+# isn't GHCR (a home lab's own local registry, say), or for smoke-testing
+# a build before trusting it. If IMAGE_REGISTRY is ghcr.io/<owner>, prefer
+# .github/workflows/publish-incus-ui.yml (gh workflow run
+# publish-incus-ui.yml -f tag=<tag>) instead — same manual-trigger policy,
+# just built on GitHub's infra instead of whatever machine this runs on.
+#
+# Either way, publishing stays a deliberate, confirmed step, never
+# something that fires on every push — same policy nightscout-podman uses
+# for its own OCI pilot. And whichever you use, this is also the way to
+# validate a bumped incus-ui/Containerfile's INCUS_UI_REF before trusting
+# it — see that file's own comment on why that pin needs an actual build,
+# not just a glance at the commit.
 #
 # One-time setup: podman login <registry>
 #
