@@ -1,0 +1,44 @@
+# incus-ui: the Incus web UI + its public-facing reverse proxy, as an Incus
+# OCI application container (single process, no init, no nested runtime).
+# See ../README.md for the full build+publish+deploy story.
+#
+# This is a TEMPLATE — the dollar-brace placeholders below get filled in
+# from deploy.env by scripts/deploy.sh, which is how this same file produces a
+# correct profile on every host without hand-editing it per deployment.
+# Don't apply it directly with "incus profile edit < incus-ui.profile.yaml";
+# use scripts/deploy.sh instead.
+#
+# Public-facing: this is the one instance that receives real internet
+# traffic, so it owns the host's public :80/:443 via proxy devices below.
+# Everything it talks to internally (the Incus API, Authelia) stays off
+# the public interface entirely — see authelia/authelia.profile.yaml.
+#
+# Persistent volume (caddy-data) matters: without it, Caddy re-requests a
+# Let's Encrypt cert from scratch on every container recreation, which
+# will eventually hit rate limits. scripts/deploy.sh creates it if missing.
+
+name: incus-ui
+description: Incus web UI + public reverse proxy (OCI application container)
+config:
+  boot.autorestart: "true"
+  limits.cpu: "1"
+  limits.memory: 512MiB
+  environment.ACME_EMAIL: "${ADMIN_EMAIL}"
+  environment.INCUS_UI_DOMAIN: "${INCUS_UI_DOMAIN}"
+  environment.AUTH_DOMAIN: "${AUTH_DOMAIN}"
+  environment.INCUS_API_ADDR: "${INCUS_API_ADDR}"
+  environment.AUTHELIA_ADDR: "${AUTHELIA_STATIC_IP}:9091"
+devices:
+  http:
+    connect: tcp:127.0.0.1:80
+    listen: tcp:0.0.0.0:80
+    type: proxy
+  https:
+    connect: tcp:127.0.0.1:443
+    listen: tcp:0.0.0.0:443
+    type: proxy
+  caddy-data:
+    type: disk
+    source: incus-ui-caddy-data
+    path: /data
+    pool: "${STORAGE_POOL}"
