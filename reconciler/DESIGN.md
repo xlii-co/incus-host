@@ -205,13 +205,64 @@ certificate Incus itself confines to one project and blocks from any
 global server config change, no scriptlet logic needed at all — real
 restriction, just project-granularity rather than instance-granularity.
 
-**Still unresolved**: how much scriptlet logic the finer, instance-level
-check actually takes to get right in practice — whether matching `object`
+**Resolved further, 2026-09-16 (later session): the two options above
+aren't interchangeable — they solve different-shaped problems.** The
+project-restricted client is a single flat gate — "this cert may act
+inside project X" — with no distinction between view and exec, and no
+distinction between instances within that project. But the reconciler's
+job is asymmetric: it needs to *view* configs across every project that
+might self-register (any current or future tenant), while *exec*ing only
+into `ingress` specifically. A project-restricted client can't express
+that split — granting it view of every tenant project means listing each
+one explicitly (reintroducing the manual per-project step self-
+registration was built to remove), or it can't see projects it wasn't
+granted into at all. The scriptlet is the only one of the two that can
+express "broad view, narrow act," since `object` and `entitlement` are
+independent inputs to `authorize()`. So *if* this gets built, it's the
+scriptlet — the restricted client isn't a simpler version of the same
+fix, it's a worse fit for this specific job.
+
+**The bigger reason it's still not built: scoping is decorative unless
+the reconciler also stops running as host root.** A scoped TLS identity
+only restricts requests made *through the network API*. As long as
+`reconcile.sh` runs as root on the bare host with access to
+`/var/lib/incus/unix.socket`, it — or anything that compromises it — can
+always fall back to that unscoped local socket regardless of what
+certificate or scriptlet grant exists; the two paths coexist, and the
+socket is strictly more powerful. An actually-meaningful scoped identity
+requires *also* moving the reconciler off the host into its own
+container with no local socket access, which reopens this doc's
+"Discovery" section's tradeoff in the other direction (host-level
+script, no network attack surface, in exchange for unrestricted local
+access). Scoping and de-hosting are a package deal — doing one without
+the other is mostly documentation of intent, not a real boundary.
+
+**This is a platform-wide question, not specific to this script** —
+expect the same shape to recur for any future host-level automation
+(backup jobs, health checks, metrics scraping, cert rotation, etc.), so
+the answer is worth generalizing rather than re-deriving per script:
+
+1. Ask placement first, before any permission design: does new
+   automation need to be host-level at all, or can it run in its own
+   container talking only over the network API? Container placement is
+   what makes a scoped identity real; host placement makes it decorative,
+   per above.
+2. If a scoped identity is ever built for anything, build one generic
+   `identity -> {view, exec}` capability table inside a single scriptlet,
+   not bespoke `authorize()` logic per script — so the *next*
+   reconciler-shaped thing is a cert plus one table row, not a new
+   design. Incus projects, if a platform/tenant project split ever
+   happens on this host, become a field that table can reference (e.g.
+   `"view": "project:nightscout"`), not a competing enforcement
+   mechanism.
+
+**Still unresolved**: how much scriptlet logic the instance-level check
+actually takes to get right in practice — whether matching `object`
 against "specifically the `ingress` instance" is a one-line comparison or
-something messier once real code is written against it, and whether
-issuing/rotating a dedicated certificate for a cron-run host script is
-worth the operational overhead versus the coarser project-restricted
-option above. Worth prototyping before deciding, not assumed either way.
+something messier once real code is written against it — and, now, the
+larger open question of whether/when de-hosting the reconciler into its
+own container is worth the network attack surface it (re-)introduces.
+Worth prototyping before deciding, not assumed either way.
 
 ## Trigger
 
