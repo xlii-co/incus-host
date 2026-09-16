@@ -167,6 +167,12 @@ incus restart ingress # picks up the Caddyfile + routes pushed above
 echo "== incus daemon: OIDC + authorization =="
 render_server_config | incus config edit
 
+echo "== reconciler cron job =="
+# Idempotent: drop any prior line for this exact script first, so re-running
+# deploy.sh never accumulates duplicate cron entries.
+reconciler_cron="* * * * * $(pwd)/reconciler/reconcile.sh >> /var/log/ingress-reconciler.log 2>&1"
+(crontab -l 2>/dev/null | grep -v 'reconciler/reconcile.sh'; echo "$reconciler_cron") | crontab -
+
 echo
 echo "Done. https://${INCUS_UI_DOMAIN} should be up within a minute or so"
 echo "(Caddy needs a moment to get its certs on first boot)."

@@ -43,6 +43,7 @@ being true, look at OpenFGA instead of growing the scriptlet.
 | `.github/workflows/publish-incus-ui.yml` | same publish, built on GitHub's infra instead — `gh workflow run publish-incus-ui.yml -f tag=<tag>`, still manual-only |
 | `scripts/deploy.sh` | applies everything above to whatever host `incus` is pointed at |
 | `scripts/push-to-host.sh` | syncs this repo's tracked files to a host, for the scripts above to run there — see below |
+| `reconciler/reconcile.sh` | cron-run (`* * * * *`), self-registration: any instance can register a public route by setting `user.ingress.{domain,port,enabled}` on itself, no file to push and no restart — see `reconciler/DESIGN.md` for the full mechanism |
 
 ## Apply order (fresh host)
 
