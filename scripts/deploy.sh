@@ -87,8 +87,17 @@ if [[ "$IMAGE_REGISTRY" == */* ]]; then
 else
   REGISTRY_PATH=""
 fi
-incus remote list -f csv -c n | grep -qx incus-ui-oci || \
-  incus remote add incus-ui-oci "https://${REGISTRY_HOST}" --protocol oci ${IMAGE_REGISTRY_TOKEN:+--token "$IMAGE_REGISTRY_TOKEN"}
+desired_registry_url="https://${REGISTRY_HOST}"
+# Keyed on name only would silently keep pointing at a stale registry —
+# confirmed live: switching IMAGE_REGISTRY from a local registry to GHCR
+# left incus-ui-oci pointed at 127.0.0.1:5000, since a same-named remote
+# already "existed" and this used to just skip re-adding it. Compare the
+# URL too, and replace the remote outright when it's changed.
+current_registry_url=$(incus remote list -f csv | awk -F, -v n=incus-ui-oci '$1==n{print $2}')
+if [ "$current_registry_url" != "$desired_registry_url" ]; then
+  [ -n "$current_registry_url" ] && incus remote remove incus-ui-oci
+  incus remote add incus-ui-oci "$desired_registry_url" --protocol oci ${IMAGE_REGISTRY_TOKEN:+--token "$IMAGE_REGISTRY_TOKEN"}
+fi
 
 echo "== storage volumes (created once, never recreated by this script) =="
 incus storage volume list "$STORAGE_POOL" -f csv -c n | grep -qx incus-ui-caddy-data || \
