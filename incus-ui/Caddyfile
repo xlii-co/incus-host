@@ -1,27 +1,20 @@
 # All per-deployment values below come from environment.* keys on the
 # instance's profile (see incus-ui.profile.yaml) — Caddy reads {$VAR}
-# straight from its own environment, no templating step needed. Automatic
-# HTTPS (HTTP-01/TLS-ALPN-01) is used by default, which needs nothing but
-# :80/:443 reachable — the Containerfile bundles the cloudflare-dns plugin
-# too (matching this project's other Caddy build) if a given host prefers
-# DNS-01 later; not wired up here to keep this portable across hosts that
-# aren't necessarily on Cloudflare DNS.
-
+# straight from its own environment, no templating step needed.
+#
+# Plain internal HTTP, not a domain-matched site block: this instance has
+# no inbound :80 of its own anymore (the shared `ingress` instance owns
+# that — see ../ingress/), so it has no way to satisfy an HTTP-01
+# challenge and must not attempt automatic HTTPS. ingress terminates
+# public TLS for {$INCUS_UI_DOMAIN} and reverse-proxies here in plain HTTP
+# over the bridge; this Caddy's job is unchanged otherwise — split
+# /1.0*-style API paths from the static UI build.
 {
-	email {$ACME_EMAIL}
 	admin off
 }
 
-{$INCUS_UI_DOMAIN} {
+:80 {
 	encode zstd gzip
-
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "SAMEORIGIN"
-		Referrer-Policy "same-origin"
-		-Server
-	}
 
 	@api path /1.0* /oidc* /metrics*
 	handle @api {
@@ -31,7 +24,7 @@
 			}
 			header_up Host {http.request.host}
 			header_up X-Forwarded-Host {http.request.host}
-			header_up X-Real-IP {remote_host}
+			header_up X-Real-IP {http.request.header.X-Real-IP}
 		}
 	}
 
@@ -39,30 +32,6 @@
 		root * /srv/ui/build
 		try_files {path} /index.html
 		file_server
-	}
-
-	log {
-		output file /data/access.log {
-			roll_size 10MiB
-			roll_keep 5
-		}
-		format json
-	}
-}
-
-{$AUTH_DOMAIN} {
-	encode zstd gzip
-
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "SAMEORIGIN"
-		Referrer-Policy "same-origin"
-		-Server
-	}
-
-	reverse_proxy http://{$AUTHELIA_ADDR} {
-		header_up X-Real-IP {remote_host}
 	}
 
 	log {

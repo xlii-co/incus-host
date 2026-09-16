@@ -54,9 +54,9 @@ render() { # render TEMPLATE — substitutes ${VAR} placeholders, prints to stdo
     -e "s|\${AUTH_DOMAIN}|${AUTH_DOMAIN}|g" \
     -e "s|\${INCUS_API_ADDR}|${INCUS_API_ADDR}|g" \
     -e "s|\${AUTHELIA_STATIC_IP}|${AUTHELIA_STATIC_IP}|g" \
+    -e "s|\${INCUS_UI_STATIC_IP}|${INCUS_UI_STATIC_IP}|g" \
     -e "s|\${BRIDGE_NETWORK}|${BRIDGE_NETWORK}|g" \
     -e "s|\${STORAGE_POOL}|${STORAGE_POOL}|g" \
-    -e "s|\${INCUS_UI_IP}|${INCUS_UI_IP:-}|g" \
     "$1"
 }
 
@@ -104,12 +104,18 @@ incus storage volume list "$STORAGE_POOL" -f csv -c n | grep -qx incus-ui-caddy-
   incus storage volume create "$STORAGE_POOL" incus-ui-caddy-data
 incus storage volume list "$STORAGE_POOL" -f csv -c n | grep -qx authelia-config || \
   incus storage volume create "$STORAGE_POOL" authelia-config
+incus storage volume list "$STORAGE_POOL" -f csv -c n | grep -qx ingress-caddy-data || \
+  incus storage volume create "$STORAGE_POOL" ingress-caddy-data
+incus storage volume list "$STORAGE_POOL" -f csv -c n | grep -qx ingress-routes || \
+  incus storage volume create "$STORAGE_POOL" ingress-routes
 
 echo "== profiles =="
 incus profile list -f csv -c n | grep -qx incus-ui || incus profile create incus-ui
 render incus-ui/incus-ui.profile.yaml | incus profile edit incus-ui
 incus profile list -f csv -c n | grep -qx authelia || incus profile create authelia
 render authelia/authelia.profile.yaml | incus profile edit authelia
+incus profile list -f csv -c n | grep -qx ingress || incus profile create ingress
+render ingress/ingress.profile.yaml | incus profile edit ingress
 
 echo "== incus-ui =="
 if incus list -f csv -c n | grep -qx incus-ui; then
@@ -138,8 +144,27 @@ incus file push secrets/oidc_hmac_secret authelia/config/secrets/oidc_hmac_secre
 incus file push secrets/oidc.key authelia/config/secrets/oidc.key
 incus restart authelia # first boot almost always beat the config being there
 
+echo "== ingress =="
+if incus list -f csv -c n | grep -qx ingress; then
+  incus delete ingress --force
+fi
+incus launch docker-oci:caddy:2.11.4 ingress \
+  --profile default --profile ingress
+for i in $(seq 1 20); do
+  incus exec ingress -- test -d /etc/caddy 2>/dev/null && break
+  sleep 1
+  [ "$i" -eq 20 ] && { echo "/etc/caddy never appeared in ingress — aborting" >&2; exit 1; }
+done
+incus file push ingress/Caddyfile ingress/etc/caddy/Caddyfile
+# Plain files, not rendered: these use Caddy's own {$VAR} runtime env-var
+# syntax (resolved from ingress.profile.yaml's environment.* keys, same as
+# incus-ui/Caddyfile always has), not this script's ${VAR} sed templating —
+# different bracket order, deliberately, so the two never collide.
+incus file push --create-dirs ingress/routes/incus-ui.caddy ingress/etc/caddy/routes/incus-ui.caddy
+incus file push ingress/routes/auth.caddy ingress/etc/caddy/routes/auth.caddy
+incus restart ingress # picks up the Caddyfile + routes pushed above
+
 echo "== incus daemon: OIDC + authorization =="
-INCUS_UI_IP=$(incus list incus-ui -f csv -c 4 | cut -d' ' -f1)
 render_server_config | incus config edit
 
 echo

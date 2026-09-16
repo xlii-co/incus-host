@@ -27,8 +27,11 @@ being true, look at OpenFGA instead of growing the scriptlet.
 | path | purpose |
 |---|---|
 | `deploy.env.example` | per-host values — copy to `deploy.env`, fill in, never commit |
+| `ingress/Caddyfile` | the shared public edge — owns :80/:443, no domain logic of its own, just `import routes/*.caddy` |
+| `ingress/routes/*.caddy` | one file per public domain this host serves, pushed in by whichever project owns that domain — `incus-ui.caddy`/`auth.caddy` here are this repo's own; a project like `nightscout-podman` pushes its own the same way, as part of its own deploy, never touching this repo |
+| `ingress/ingress.profile.yaml` | Incus profile template for the above, as a stock-Caddy OCI application container (no custom build needed) |
 | `incus-ui/Containerfile` | multi-stage build: `incus-ui-canonical`'s static UI + a custom Caddy (matches `nightscout-podman/caddy/Containerfile`'s build) |
-| `incus-ui/Caddyfile` | serves the UI, reverse-proxies the Incus API and Authelia; reads its own env vars, no templating step |
+| `incus-ui/Caddyfile` | internal-only now — splits `/1.0*`-style API paths to the real Incus API from the static UI build; reads its own env vars, no templating step |
 | `incus-ui/incus-ui.profile.yaml` | Incus profile template for the above, as an OCI application container |
 | `authelia/configuration.yml` | Authelia config — safe to commit as-is, see the comment at its top for how secrets and per-host domains get resolved without ever being written to this file |
 | `authelia/users_database.yml.example` | shape only; the real file has a real password hash and isn't committed |
@@ -78,15 +81,20 @@ recreating the containers doesn't lose either.
 ## Network shape
 
 ```
-Browser → Caddy (incus-ui, public :80/:443)
-              ├─→ Authelia (internal only, auth domain)
-              └─→ Incus API (internal only, incus daemon)
+Browser → Caddy (ingress, public :80/:443)
+              ├─→ incus-ui (internal) ──→ Incus API (internal)
+              └─→ Authelia (internal)
 Incus daemon  → Authelia directly (server-to-server, verifies OIDC tokens)
 ```
 
-Only `incus-ui` ever touches the public interface — Authelia and the Incus
-API itself stay off it entirely, reached only over the Incus-managed
-bridge network.
+Only `ingress` ever touches the public interface — `incus-ui`, Authelia,
+and the Incus API itself all stay off it entirely, reached only over the
+Incus-managed bridge network. `incus-ui` keeps its own internal Caddy for
+splitting `/1.0*`-style API paths from the static UI build; it just no
+longer terminates public TLS or owns a public port — that moved to
+`ingress` so that other projects on this same host (nightscout-podman's
+`ns-caddy`, for one) can register their own public domain by dropping a
+route file into `ingress/routes/`, without ever touching this repo.
 
 ## What this doesn't cover
 

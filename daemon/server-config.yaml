@@ -22,10 +22,10 @@ config:
   core.https_address: "${INCUS_API_ADDR}"
   # Lets Incus log/rate-limit by the real client IP Caddy forwards, not
   # Caddy's own container IP. Not load-bearing for the OIDC flow itself.
-  # incus-ui gets a new IP every deploy (deploy.sh recreates it from
-  # scratch), so this tracks that IP at render time rather than living in
-  # deploy.env.
-  core.https_trusted_proxy: "${INCUS_UI_IP}"
+  # incus-ui now has a static address (see incus-ui/incus-ui.profile.yaml)
+  # specifically so this can be a fixed deploy.env value instead of a
+  # live lookup re-run on every deploy.
+  core.https_trusted_proxy: "${INCUS_UI_STATIC_IP}"
   oidc.issuer: "https://${AUTH_DOMAIN}"
   oidc.client.id: incus
   oidc.audience: incus

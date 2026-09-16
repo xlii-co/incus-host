@@ -1,6 +1,6 @@
-# incus-ui: the Incus web UI + its public-facing reverse proxy, as an Incus
-# OCI application container (single process, no init, no nested runtime).
-# See ../README.md for the full build+publish+deploy story.
+# incus-ui: the Incus web UI, as an Incus OCI application container
+# (single process, no init, no nested runtime). See ../README.md for the
+# full build+publish+deploy story.
 #
 # This is a TEMPLATE — the dollar-brace placeholders below get filled in
 # from deploy.env by scripts/deploy.sh, which is how this same file produces a
@@ -8,35 +8,35 @@
 # Don't apply it directly with "incus profile edit < incus-ui.profile.yaml";
 # use scripts/deploy.sh instead.
 #
-# Public-facing: this is the one instance that receives real internet
-# traffic, so it owns the host's public :80/:443 via proxy devices below.
-# Everything it talks to internally (the Incus API, Authelia) stays off
-# the public interface entirely — see authelia/authelia.profile.yaml.
+# Internal only: no proxy devices, no public cert. The shared `ingress`
+# instance (see ../ingress/) owns the host's public :80/:443 and
+# reverse-proxies ${INCUS_UI_DOMAIN} here, over the bridge. This instance's
+# own Caddy still does its /1.0*-vs-static-UI split and talks to the real
+# Incus API directly — that responsibility didn't move, only the public
+# TLS/domain termination did.
 #
-# Persistent volume (caddy-data) matters: without it, Caddy re-requests a
-# Let's Encrypt cert from scratch on every container recreation, which
-# will eventually hit rate limits. scripts/deploy.sh creates it if missing.
+# Static IP, not DHCP: ingress's route to this instance is by IP (see
+# ingress/routes/incus-ui.caddy), and this instance's address is also what
+# daemon/server-config.yaml's core.https_trusted_proxy names — both need
+# it to stay fixed across recreations, which a DHCP lease wouldn't.
+#
+# Persistent volume (caddy-data) is now just this instance's own access
+# log, not ACME state — ingress owns cert issuance now.
 
 name: incus-ui
-description: Incus web UI + public reverse proxy (OCI application container)
+description: Incus web UI (OCI application container)
 config:
   boot.autorestart: "true"
   limits.cpu: "1"
   limits.memory: 512MiB
-  environment.ACME_EMAIL: "${ADMIN_EMAIL}"
   environment.INCUS_UI_DOMAIN: "${INCUS_UI_DOMAIN}"
-  environment.AUTH_DOMAIN: "${AUTH_DOMAIN}"
   environment.INCUS_API_ADDR: "${INCUS_API_ADDR}"
-  environment.AUTHELIA_ADDR: "${AUTHELIA_STATIC_IP}:9091"
 devices:
-  http:
-    connect: tcp:127.0.0.1:80
-    listen: tcp:0.0.0.0:80
-    type: proxy
-  https:
-    connect: tcp:127.0.0.1:443
-    listen: tcp:0.0.0.0:443
-    type: proxy
+  eth0:
+    type: nic
+    network: "${BRIDGE_NETWORK}"
+    name: eth0
+    ipv4.address: "${INCUS_UI_STATIC_IP}"
   caddy-data:
     type: disk
     source: incus-ui-caddy-data

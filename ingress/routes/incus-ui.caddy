@@ -1,0 +1,27 @@
+# Pushed into the ingress instance by this repo's own scripts/deploy.sh —
+# see ../../README.md. Terminates public TLS for the Incus UI's own
+# domain and reverse-proxies to incus-ui, which is now internal-only and
+# does its own /1.0*-vs-static-UI split from there.
+{$INCUS_UI_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	reverse_proxy http://{$INCUS_UI_ADDR} {
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
