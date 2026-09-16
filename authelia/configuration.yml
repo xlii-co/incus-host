@@ -1,23 +1,34 @@
 # This file is safe to commit as-is — it has no secrets and no per-host
 # literals. Every host-specific or secret value below is resolved by
 # Authelia itself at startup, via its own built-in "template" config
-# filter (docs: configuration/methods/files.md#file-filters):
+# filter (docs: configuration/methods/files.md#file-filters). Two real
+# uses appear below: the domain fields, via the env function reading
+# AUTH_DOMAIN / INCUS_UI_DOMAIN (set via authelia.profile.yaml's
+# environment.* keys), and the OIDC signing key, via fileContent piped
+# through nindent — needed because it's nested inside a list (jwks),
+# which Authelia's *_FILE secret mechanism explicitly can't reach (lists
+# of objects are excluded — see the secrets doc).
 #
-#   - {{ env "VAR" }} reads a plain environment variable — used for the
-#     two domain names, set via authelia.profile.yaml's environment.* keys.
-#   - {{ fileContent "path" | nindent N }} reads a file's content — used
-#     for the OIDC signing key below, since it's nested inside a list
-#     (jwks), which Authelia's *_FILE secret mechanism explicitly can't
-#     reach (lists of objects are excluded — see the secrets doc).
-#   - Everything else marked "secret" loads from a *_FILE environment
-#     variable automatically, because its key ends in key/secret/password/
-#     token/certificate_chain — Authelia's own convention, not a filter.
-#     See scripts/generate-authelia-secrets.sh and authelia.profile.yaml
-#     for where those env vars and files come from.
+# Everything else marked "secret" loads from a *_FILE environment
+# variable automatically, because its key ends in key/secret/password/
+# token/certificate_chain — Authelia's own convention, not this filter.
+# See scripts/generate-authelia-secrets.sh and authelia.profile.yaml for
+# where those env vars and files come from.
 #
 # Requires environment.X_AUTHELIA_CONFIG_FILTERS=template on the instance
-# (set in authelia.profile.yaml) — without it, the {{ }} below are treated
-# as literal text instead of being resolved.
+# (set in authelia.profile.yaml) — without it, the template actions
+# mentioned above are treated as literal text instead of being resolved.
+#
+# IMPORTANT: that also means this entire file, comments included, is live
+# template input — Authelia's template engine has no concept of a YAML
+# comment, it just sees text. Never write a literal double-brace pair in
+# a comment here, even to describe the syntax: an earlier version of this
+# comment did exactly that (showing the fileContent pattern above with a
+# placeholder "N" for the indent width, written as real double-brace
+# syntax) and broke startup outright — every value below silently failed
+# to resolve, and Authelia refused to boot with the actual reason buried
+# under a wall of resulting "required" errors, because the engine tried
+# to call a function literally named N and none exists.
 
 theme: light
 
