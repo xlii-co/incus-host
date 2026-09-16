@@ -53,13 +53,19 @@ One pass, each run:
 
 1. Query `GET /1.0/instances?recursion=2` against the **local unix
    socket** (`/var/lib/incus/unix.socket`), not the network HTTPS API.
-   Read-only, but "read every instance's full config" is real platform-
-   level visibility — running this on the host as root, over the socket
-   Incus already trusts unconditionally, matches the same trust boundary
-   this whole platform already relies on (see `daemon/authorization.star`'s
-   own comment on scriptlet-based trust). Giving that same visibility to
-   a *container* instead would mean minting it real credentials against
-   the network API — a bigger, avoidable exposure for no benefit.
+   **Be honest about what this actually grants**: root on the local socket
+   is not a scoped, read-only view — it's the exact same unrestricted
+   access the `incus` CLI itself has (create/delete/reconfigure anything,
+   on any instance). The reconciler *choosing* to only read configs and
+   `exec` into `ingress` describes this script's current behavior, not a
+   real privilege boundary — a bug or a compromised dependency here has
+   the blast radius of "full control of this Incus daemon," not "can see
+   some configs." Running it as a host-level script rather than inside a
+   container avoids handing that same unrestricted power to something
+   with a network attack surface too, which is a real reason to prefer
+   this shape — but it is not the same claim as "this access is scoped,"
+   and earlier drafts of this doc conflated the two. See "Open question"
+   at the end for what an actually-scoped version might look like.
 2. Filter to instances where `config["user.ingress.enabled"] == "true"`
    and `config["user.ingress.domain"]` is set.
 3. For each match, resolve its current address from
@@ -133,30 +139,59 @@ Idempotent, full-rebuild-each-pass:
    away, not just accumulates), then apply.
 
 **Apply, without paying the "every domain briefly drops" cost**: turn
-`admin` back on in `ingress/Caddyfile` (removing `admin off`), but do
-**not** expose it — Caddy's admin API defaults to binding
-`127.0.0.1:2019` inside the container's own network namespace, and
-`ingress.profile.yaml` gets no proxy device for it, so nothing on
-`incusbr-ns` — nothing outside `incus exec` — can ever reach it. The
-reconciler applies changes with:
+`admin` back on in `ingress/Caddyfile` (removing `admin off`) so
+`caddy reload` (Caddy's own graceful reload, no restart, existing
+connections drain, unrelated domains never blip) is available at all.
+`ingress.profile.yaml` gets no proxy device for the admin API's default
+`127.0.0.1:2019` bind, so nothing on `incusbr-ns` can reach it directly.
+The reconciler applies changes with:
 
 ```
 incus exec ingress -- caddy reload --config /etc/caddy/Caddyfile
 ```
 
-`incus exec` is itself a host-privileged operation (same trust boundary
-as step 1's socket read), so this doesn't reopen the "anything on the
-bridge can reprogram the front door" exposure flagged when the admin API
-question first came up — it's reachable only from exactly the same place
-that already has unconditional read access to every instance's config.
-`caddy reload` is graceful: existing connections drain, only the domains
-whose config actually changed see so much as a hiccup, and domains that
-didn't change never blip at all. This is strictly better than the manual
-convention's `incus restart ingress`, which the reconciler replaces for
-every route it manages — hand-pushed routes still restart, since
-`ingress/Caddyfile` will *have* an admin API available. Once the
-reconciler exists, consider retiring the manual `incus restart ingress`
-step from `deploy.sh` too, since `caddy reload` covers it just as well.
+**What this does and doesn't actually buy you, stated plainly**: keeping
+the admin API off the bridge is a real, correct piece of hygiene — it
+closes one specific path (anything else on `incusbr-ns` calling it
+directly). It is not, on its own, a meaningful security boundary against
+the reconciler itself, or against anything else with host root: that
+same actor could push an arbitrary Caddyfile via `incus file push` or
+just `incus restart ingress` outright, neither of which the admin API's
+exposure has any bearing on. So "the admin API is locked away" and "this
+is safe because of the trust boundary" are two different claims — the
+first is true and worth keeping, the second doesn't actually follow from
+it, since host root already has total authority over `ingress` through
+several other doors regardless. The genuine safety property here is
+narrower than earlier drafts of this doc implied: `caddy reload` over
+`incus exec` is a *convenient and graceful* way to apply changes, not a
+*restricted* one. See "Open question" below for what actual restriction
+would take.
+
+This is still strictly better than the manual convention's
+`incus restart ingress` for the routes it replaces — hand-pushed routes
+(`incus-ui.caddy`, `auth.caddy`) still go through a full restart on
+change, since those are `deploy.sh`'s own concern, not the reconciler's.
+
+## Open question: what would an actually-scoped identity look like?
+
+The reconciler's real privilege today is "full root on this Incus
+daemon," used narrowly. A genuinely least-privilege version would give it
+an identity that can only read instance configs and reload `ingress`
+specifically — nothing else. Incus's own restricted-client mechanism
+(`authorization.client.tls-restricted`, already referenced in
+`daemon/server-config.yaml` for a different purpose, backed by the same
+Starlark scriptlet authorization model `daemon/authorization.star` already
+uses for OIDC) is the most likely place this would live — mint the
+reconciler a TLS client certificate, and have the scriptlet's `authorize()`
+function grant it exactly the two permissions it needs rather than the
+current "anyone through OIDC, or the local socket, gets everything" logic.
+Genuinely unresolved whether Incus's scriptlet model can express
+per-identity, per-instance, per-action grants this granular, or whether it
+only really distinguishes coarser classes of client (as it does today,
+`oidc` vs `tls` vs `tls-restricted`, without acting differently based on
+*which* restricted client it is). Worth a real investigation before
+building it — not assumed to be straightforward just because the pieces
+exist.
 
 ## Trigger
 
