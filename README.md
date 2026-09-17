@@ -19,8 +19,11 @@ Incus and built its own proprietary fine-grained authorization system).
 Incus itself only ever supported three authorization methods — TLS,
 OpenFGA, and Scriptlet (`doc/authorization.md` in the incus repo) — and
 this repo uses the third, `daemon/authorization.star`: trust anyone who
-authenticated through Authelia. Good enough for one admin; if that stops
-being true, look at OpenFGA instead of growing the scriptlet.
+authenticated through Authelia, or who holds a trusted TLS client cert
+(`incus config trust add` — this is what cross-host automation like
+`tink`'s volume-backup story authenticates as). Good enough for one
+admin; if that stops being true, look at OpenFGA instead of growing the
+scriptlet.
 
 ## Layout
 
