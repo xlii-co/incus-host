@@ -126,7 +126,8 @@ indistinguishable to Caddy, and a project can graduate from one to the
 other without changing what gets served.
 
 **`generated/` is its own subdirectory, separate from the hand-maintained
-`ingress/routes/` this repo's own `deploy.sh` pushes into.** The
+`ingress/routes/` that `tink deploy` pushes into (from `tink/configs/ingress/routes/`
+— see that repo's `configs/README.md`).** The
 reconciler only ever touches `generated/*.caddy` — it must never be able
 to delete or overwrite `incus-ui.caddy`/`auth.caddy`. `ingress/Caddyfile`
 imports both:

@@ -1,14 +1,36 @@
 # incus-host
 
-Declarative config for the Incus web UI + a traditional username/password
-login in front of it (via Authelia, OIDC), meant to be applied to more than
-one Incus host — this VPS today, home lab boxes later. Everything that
-differs between hosts lives in one file, `deploy.env`; everything else here
-is generic.
+Was declarative config for the Incus web UI + a traditional
+username/password login in front of it (via Authelia, OIDC). **As of
+2026-09-18, the actual config templates and the tool that applies them
+both live in [`github.com/minihci/tink`](https://github.com/minihci/tink)**
+(`configs/` and `tink deploy`, respectively) — this repo's role inverted
+from "the thing that gets applied" to "design history and a reference
+bash implementation," see below for exactly what's still here and why.
 
-Split out of `nightscout-podman` deliberately: that repo is about one T1D
-monitoring stack on one box. This is foundational Incus-host infrastructure
-that stack happens to run *on*, not something specific to it.
+Originally split out of `nightscout-podman` deliberately (that repo is
+about one T1D monitoring stack on one box; this was foundational
+Incus-host infrastructure that stack happened to run *on*), then this
+repo's own config templates moved again into `tink` once `tink deploy`
+existed for real — a tool and the templates it renders don't need to be
+two repos just because they started in two places. See `tink`'s own
+README ("Relationship to `incus-host`") for the fuller reasoning.
+
+## What's still here, and why
+
+| path | purpose |
+|---|---|
+| `reconciler/reconcile.sh` + `reconciler/DESIGN.md` | the ingress self-registration mechanism's reference bash implementation and full design writeup — kept for history and for the design reasoning, even though `tink daemon run` (the Go port) is what's actually running this on every real host now |
+| `scripts/generate-authelia-secrets.sh` | one-time per host: generates every secret via Authelia's own CLI — still real, still used, has no config template to move |
+| `scripts/push-to-host.sh` | syncs this (now much smaller) repo's tracked files to a host |
+
+Everything else — `daemon/authorization.star`, `daemon/server-config.yaml`,
+the `incus-ui`/`authelia`/`ingress` profile YAMLs, Authelia's
+`configuration.yml`, the `ingress` Caddyfile and its hand-maintained
+routes, `deploy.env.example` — moved to `tink/configs/`
+([layout + purpose of each](https://github.com/minihci/tink/blob/main/configs/README.md)).
+`scripts/deploy.sh` is gone with them (it read exactly those files); use
+`tink deploy` instead — see `tink`'s own README for building/running it.
 
 ## Why Incus has no native permission groups
 
@@ -18,66 +40,30 @@ don't work against Incus: that's an LXD-only feature (LXD forked from
 Incus and built its own proprietary fine-grained authorization system).
 Incus itself only ever supported three authorization methods — TLS,
 OpenFGA, and Scriptlet (`doc/authorization.md` in the incus repo) — and
-this repo uses the third, `daemon/authorization.star`: trust anyone who
-authenticated through Authelia, or who holds a trusted TLS client cert
-(`incus config trust add` — this is what cross-host automation like
-`tink`'s volume-backup story authenticates as). Good enough for one
-admin; if that stops being true, look at OpenFGA instead of growing the
-scriptlet.
+this platform uses the third,
+[`tink/configs/daemon/authorization.star`](https://github.com/minihci/tink/blob/main/configs/daemon/authorization.star):
+trust anyone who authenticated through Authelia, or who holds a trusted
+TLS client cert (`incus config trust add` — this is what cross-host
+automation like `tink`'s volume-backup story authenticates as). Good
+enough for one admin; if that stops being true, look at OpenFGA instead
+of growing the scriptlet.
 
-## Layout
+## Deploying a fresh host
 
-| path | purpose |
-|---|---|
-| `deploy.env.example` | per-host values — copy to `deploy.env`, fill in, never commit |
-| `ingress/Caddyfile` | the shared public edge — owns :80/:443, no domain logic of its own, just `import routes/*.caddy` |
-| `ingress/routes/*.caddy` | one file per public domain this host serves, pushed in by whichever project owns that domain — `incus-ui.caddy`/`auth.caddy` here are this repo's own; a project like `nightscout-podman` pushes its own the same way, as part of its own deploy, never touching this repo |
-| `ingress/ingress.profile.yaml` | Incus profile template for the above, as a stock-Caddy OCI application container (no custom build needed) |
-| `incus-ui/incus-ui.profile.yaml` | Incus profile template for the `incus-ui` OCI application container — the image build itself (Containerfile + Caddyfile) now lives in [`minihci/incus-ui`](https://github.com/minihci/incus-ui), split out since it's not specific to this host |
-| `authelia/configuration.yml` | Authelia config — safe to commit as-is, see the comment at its top for how secrets and per-host domains get resolved without ever being written to this file |
-| `authelia/users_database.yml.example` | shape only; the real file has a real password hash and isn't committed |
-| `authelia/authelia.profile.yaml` | Incus profile template for Authelia, official upstream image |
-| `daemon/authorization.star` | the whole authorization policy — see above |
-| `daemon/server-config.yaml` | Incus server-config template (OIDC, authorization, trusted proxy); applied as one `incus config edit`, same pattern as the profile templates above |
-| `scripts/generate-authelia-secrets.sh` | one-time per host: generates every secret via Authelia's own CLI |
-| `scripts/deploy.sh` | applies everything above to whatever host `incus` is pointed at |
-| `scripts/push-to-host.sh` | syncs this repo's tracked files to a host, for the scripts above to run there — see below |
-| `reconciler/reconcile.sh` | reference bash implementation, self-registration: any instance can register a public route by setting `user.ingress.{domain,port,enabled}` on itself, no file to push and no restart — see `reconciler/DESIGN.md` for the full mechanism. On `incus.xlii.co` this is now actually run via `github.com/minihci/tink`'s `tink daemon run` (systemd-supervised), not this script directly |
-
-## Apply order (fresh host)
-
-This repo lives on your dev machine, but every script here shells out to
-the local `incus`/`podman` CLI, so they only run *on* the target host, not
-from wherever you cloned this. `scripts/push-to-host.sh` bridges that gap:
-it syncs exactly this repo's tracked files over, leaving secrets,
-deploy.env, and users_database.yml (all host-owned, all .gitignored — see
-"Secrets — NOT in this repo" below) untouched wherever they already are.
-
-Assumes an Incus daemon already exists on the target (storage pool,
-`incus` CLI pointed at it — see `nightscout-podman/incus/preseed.yaml` for
-how that gets bootstrapped in the first place) and both domains' DNS
-already resolve to it.
+Now `tink`'s job end to end — see that repo's README for building it and
+`configs/README.md` for the layout of what `--repo-root` points at
+(`tink`'s own `configs/` by default). Roughly:
 
 ```
-scripts/push-to-host.sh <user@host>   # first time: creates ~/incus-host there
-ssh <user@host>
-cd incus-host
-cp deploy.env.example deploy.env    # fill in
-# incus-ui's image is built/published from minihci/incus-ui, not here --
-# see that repo's README if you need a fresh build; IMAGE_REGISTRY above
-# just needs to point at wherever that image actually landed.
-scripts/generate-authelia-secrets.sh # needs: podman (pulls authelia/authelia once)
-# fill in authelia/users_database.yml from users_database.yml.example,
-# using the password hash generate-authelia-secrets.sh just printed
-scripts/deploy.sh
+git clone https://github.com/minihci/tink && cd tink
+go build -o tink ./cmd/tink   # or fetch a prebuilt binary
+cp configs/deploy.env.example configs/deploy.env    # fill in
+# generate-authelia-secrets.sh hasn't moved -- run it from a checkout of
+# *this* repo instead, pointing its output at tink's configs/ below
+/path/to/incus-host/scripts/generate-authelia-secrets.sh
+# fill in configs/authelia/users_database.yml from users_database.yml.example
+./tink deploy
 ```
-
-Re-running `scripts/deploy.sh` after changing anything is the normal way
-to apply an edit — it's idempotent, and recreates `incus-ui`/`authelia`
-from scratch rather than leaving them half-updated. Their persistent state
-(Caddy's TLS certs, Authelia's session db, its own config) lives in
-storage volumes deploy.sh creates once and never touches again, so
-recreating the containers doesn't lose either.
 
 ## Network shape
 
@@ -90,12 +76,17 @@ Incus daemon  → Authelia directly (server-to-server, verifies OIDC tokens)
 
 Only `ingress` ever touches the public interface — `incus-ui`, Authelia,
 and the Incus API itself all stay off it entirely, reached only over the
-Incus-managed bridge network. `incus-ui` keeps its own internal Caddy for
-splitting `/1.0*`-style API paths from the static UI build; it just no
-longer terminates public TLS or owns a public port — that moved to
+Incus-managed bridge network. `incus-ui`'s own internal Caddy handles the
+`/1.0*`-vs-API split at `ingress` itself now (moved there so `incus-ui`'s
+image stays a pure static-file server — see `minihci/incus-ui`); it just
+no longer terminates public TLS or owns a public port — that moved to
 `ingress` so that other projects on this same host (nightscout-podman's
-`ns-caddy`, for one) can register their own public domain by dropping a
-route file into `ingress/routes/`, without ever touching this repo.
+`nightscout-caddy`, for one) can get a public domain without ever
+touching this repo or `tink/configs/`: they self-register by setting
+`user.ingress.{domain,port,enabled}` on their own front-facing instance,
+and the reconciler (`reconciler/reconcile.sh`'s design, now running as
+`tink daemon run`) discovers it and generates the route on its own — see
+`reconciler/DESIGN.md`.
 
 ## What this doesn't cover
 
@@ -109,5 +100,5 @@ route file into `ingress/routes/`, without ever touching this repo.
   `nightscout-podman/incus/README.md` flags for its own workload.
 - **A second bridge network per host colliding with the first.** `deploy.env`
   assumes one Incus-managed bridge with one DHCP range; if a host runs
-  more than one, you'll need to adapt `authelia/authelia.profile.yaml`'s
+  more than one, you'll need to adapt `tink/configs/authelia/authelia.profile.yaml`'s
   static-IP placement by hand.

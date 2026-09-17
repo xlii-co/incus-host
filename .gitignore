@@ -1,12 +1,3 @@
-# secrets and per-deployment values — never commit
-# (authelia/configuration.yml is deliberately NOT here: it has no secrets
-# or per-host literals, see the comment at its top)
-deploy.env
-*.env
-!*.env.example
-secrets/
-authelia/users_database.yml
-
 # editor / OS cruft
 .DS_Store
 *.swp
