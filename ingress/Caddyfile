@@ -1,12 +1,14 @@
 # The shared public edge for this host — the one thing that owns :80/:443.
 # Carries no domain-specific logic itself: every real route lives in its
-# own file under routes/, dropped in by whichever project owns that
-# domain (this repo's own deploy.sh pushes routes/incus-ui.caddy and
-# routes/auth.caddy; a project like nightscout-podman pushes its own
-# ns-xlii-co.caddy the same way, as part of its own deploy, never editing
-# this file or this instance's config). routes/generated/ is the
-# reconciler's own space (see ../reconciler/DESIGN.md) — never hand-edit
-# files there, the next reconcile pass will just overwrite them.
+# own file under routes/. routes/incus-ui.caddy and routes/auth.caddy are
+# this repo's own two built-in domains, hand-pushed by deploy.sh -- they
+# aren't "a project registering," they're the platform itself, so they
+# stay on the manual path (see ../reconciler/DESIGN.md's "what v1
+# deliberately doesn't do"). Every tenant project (nightscout-podman's
+# ns-caddy today) self-registers instead: three `user.ingress.*` config
+# keys on its own instance, no file to push, no edit here. Either way,
+# routes/generated/ is the reconciler's own space -- never hand-edit files
+# there, the next reconcile pass will just overwrite them.
 #
 # Automatic HTTPS (HTTP-01/TLS-ALPN-01) applies per-domain based on each
 # route file's own site block — nothing to configure here for that.
