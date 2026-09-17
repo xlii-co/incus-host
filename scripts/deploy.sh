@@ -171,8 +171,17 @@ render_server_config | incus config edit
 echo "== reconciler cron job =="
 # Idempotent: drop any prior line for this exact script first, so re-running
 # deploy.sh never accumulates duplicate cron entries.
+#
+# `|| true` on the grep is load-bearing, not decoration: confirmed live
+# that once the reconciler line is the *only* line in the existing
+# crontab (true on every re-run after the first), `grep -v` matches
+# nothing and exits 1 -- which, under this script's `set -e`, killed the
+# subshell before `echo "$reconciler_cron"` ever ran, so `crontab -`
+# received empty input and silently wiped the whole crontab. Confirmed
+# against incus.xlii.co: this is exactly what happened the first time
+# deploy.sh was re-run after the cron-install step existed.
 reconciler_cron="* * * * * $(pwd)/reconciler/reconcile.sh >> /var/log/ingress-reconciler.log 2>&1"
-(crontab -l 2>/dev/null | grep -v 'reconciler/reconcile.sh'; echo "$reconciler_cron") | crontab -
+(crontab -l 2>/dev/null | grep -v 'reconciler/reconcile.sh' || true; echo "$reconciler_cron") | crontab -
 
 echo
 echo "Done. https://${INCUS_UI_DOMAIN} should be up within a minute or so"
