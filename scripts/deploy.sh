@@ -7,7 +7,7 @@
 # Prerequisites (see README.md for the full story):
 #   - deploy.env filled in from deploy.env.example
 #   - Both domains' DNS already pointing at this host
-#   - scripts/publish-incus-ui.sh already run at least once
+#   - an incus-ui image already published (see github.com/minihci/incus-ui)
 #   - scripts/generate-authelia-secrets.sh already run, and
 #     authelia/users_database.yml filled in from the .example using the
 #     hash it printed
@@ -157,9 +157,10 @@ for i in $(seq 1 20); do
 done
 incus file push ingress/Caddyfile ingress/etc/caddy/Caddyfile
 # Plain files, not rendered: these use Caddy's own {$VAR} runtime env-var
-# syntax (resolved from ingress.profile.yaml's environment.* keys, same as
-# incus-ui/Caddyfile always has), not this script's ${VAR} sed templating —
-# different bracket order, deliberately, so the two never collide.
+# syntax (resolved from ingress.profile.yaml's environment.* keys, same
+# pattern minihci/incus-ui's own Caddyfile uses), not this script's ${VAR}
+# sed templating — different bracket order, deliberately, so the two
+# never collide.
 incus file push --create-dirs ingress/routes/incus-ui.caddy ingress/etc/caddy/routes/incus-ui.caddy
 incus file push ingress/routes/auth.caddy ingress/etc/caddy/routes/auth.caddy
 incus restart ingress # picks up the Caddyfile + routes pushed above

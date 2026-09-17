@@ -30,17 +30,13 @@ being true, look at OpenFGA instead of growing the scriptlet.
 | `ingress/Caddyfile` | the shared public edge — owns :80/:443, no domain logic of its own, just `import routes/*.caddy` |
 | `ingress/routes/*.caddy` | one file per public domain this host serves, pushed in by whichever project owns that domain — `incus-ui.caddy`/`auth.caddy` here are this repo's own; a project like `nightscout-podman` pushes its own the same way, as part of its own deploy, never touching this repo |
 | `ingress/ingress.profile.yaml` | Incus profile template for the above, as a stock-Caddy OCI application container (no custom build needed) |
-| `incus-ui/Containerfile` | multi-stage build: `incus-ui-canonical`'s static UI + a custom Caddy (matches `nightscout-podman/caddy/Containerfile`'s build) |
-| `incus-ui/Caddyfile` | internal-only now — splits `/1.0*`-style API paths to the real Incus API from the static UI build; reads its own env vars, no templating step |
-| `incus-ui/incus-ui.profile.yaml` | Incus profile template for the above, as an OCI application container |
+| `incus-ui/incus-ui.profile.yaml` | Incus profile template for the `incus-ui` OCI application container — the image build itself (Containerfile + Caddyfile) now lives in [`minihci/incus-ui`](https://github.com/minihci/incus-ui), split out since it's not specific to this host |
 | `authelia/configuration.yml` | Authelia config — safe to commit as-is, see the comment at its top for how secrets and per-host domains get resolved without ever being written to this file |
 | `authelia/users_database.yml.example` | shape only; the real file has a real password hash and isn't committed |
 | `authelia/authelia.profile.yaml` | Incus profile template for Authelia, official upstream image |
 | `daemon/authorization.star` | the whole authorization policy — see above |
 | `daemon/server-config.yaml` | Incus server-config template (OIDC, authorization, trusted proxy); applied as one `incus config edit`, same pattern as the profile templates above |
 | `scripts/generate-authelia-secrets.sh` | one-time per host: generates every secret via Authelia's own CLI |
-| `scripts/publish-incus-ui.sh` | local build + push of the `incus-ui` image — for a non-GHCR registry, or to smoke-test a build; see below |
-| `.github/workflows/publish-incus-ui.yml` | same publish, built on GitHub's infra instead — `gh workflow run publish-incus-ui.yml -f tag=<tag>`, still manual-only |
 | `scripts/deploy.sh` | applies everything above to whatever host `incus` is pointed at |
 | `scripts/push-to-host.sh` | syncs this repo's tracked files to a host, for the scripts above to run there — see below |
 | `reconciler/reconcile.sh` | cron-run (`* * * * *`), self-registration: any instance can register a public route by setting `user.ingress.{domain,port,enabled}` on itself, no file to push and no restart — see `reconciler/DESIGN.md` for the full mechanism |
@@ -64,8 +60,9 @@ scripts/push-to-host.sh <user@host>   # first time: creates ~/incus-host there
 ssh <user@host>
 cd incus-host
 cp deploy.env.example deploy.env    # fill in
-# IMAGE_REGISTRY=ghcr.io/<owner>: gh workflow run publish-incus-ui.yml -f tag=latest
-# anything else:                 scripts/publish-incus-ui.sh   (needs: podman login <your registry>)
+# incus-ui's image is built/published from minihci/incus-ui, not here --
+# see that repo's README if you need a fresh build; IMAGE_REGISTRY above
+# just needs to point at wherever that image actually landed.
 scripts/generate-authelia-secrets.sh # needs: podman (pulls authelia/authelia once)
 # fill in authelia/users_database.yml from users_database.yml.example,
 # using the password hash generate-authelia-secrets.sh just printed

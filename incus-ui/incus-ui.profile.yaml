@@ -1,6 +1,7 @@
 # incus-ui: the Incus web UI, as an Incus OCI application container
-# (single process, no init, no nested runtime). See ../README.md for the
-# full build+publish+deploy story.
+# (single process, no init, no nested runtime). The image itself is built
+# and published from github.com/minihci/incus-ui; see ../README.md here
+# for how this profile deploys it on this specific host.
 #
 # This is a TEMPLATE — the dollar-brace placeholders below get filled in
 # from deploy.env by scripts/deploy.sh, which is how this same file produces a
