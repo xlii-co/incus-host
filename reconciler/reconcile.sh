@@ -18,16 +18,21 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 mkdir -p "$ROUTES_DIR"
 
-instances="$(curl -sf --unix-socket "$SOCKET" 'http://localhost/1.0/instances?recursion=2')"
+instances="$(curl -sf --unix-socket "$SOCKET" 'http://localhost/1.0/instances?recursion=2&all-projects=true')"
 
-# One JSON object per opted-in instance: {name, domain, port, address}.
-# address comes from live state, not a stored value -- a DHCP lease
-# change heals on the next pass instead of needing a static IP.
+# One JSON object per opted-in instance: {name, project, domain, port,
+# address}. address comes from live state, not a stored value -- a DHCP
+# lease change heals on the next pass instead of needing a static IP.
+# all-projects=true is what lets a tenant project (e.g. `nightscout`)
+# self-register the same way `default`-project instances always have --
+# without it, anything moved out of `default` silently drops off ingress
+# on the very next poll, no error anywhere (see DESIGN.md).
 registered="$(echo "$instances" | jq -c '
   .metadata[]
   | select(.config["user.ingress.enabled"] == "true" and .config["user.ingress.domain"] != null)
   | {
       name: .name,
+      project: .project,
       domain: .config["user.ingress.domain"],
       port: (.config["user.ingress.port"] // "80"),
       address: ([.state.network.eth0.addresses[]? | select(.family == "inet") | .address] | first)
@@ -44,16 +49,27 @@ done
 echo "$registered" | jq -c --argjson dupes "$dupes" 'select(.domain as $d | ($dupes | index($d)) == null)' \
   | while IFS= read -r entry; do
   name="$(echo "$entry" | jq -r '.name')"
+  project="$(echo "$entry" | jq -r '.project')"
   domain="$(echo "$entry" | jq -r '.domain')"
   port="$(echo "$entry" | jq -r '.port')"
   address="$(echo "$entry" | jq -r '.address')"
 
+  # Only prefix non-default projects -- keeps every existing default-project
+  # filename (and the hand-written incus-ui.caddy/auth.caddy alongside them)
+  # unchanged, while still keeping a `nightscout`-project ns-caddy from
+  # silently colliding with some other project's own ns-caddy on disk.
+  if [ "$project" = "default" ]; then
+    fname="${name}.caddy"
+  else
+    fname="${project}_${name}.caddy"
+  fi
+
   if [ -z "$address" ] || [ "$address" = "null" ]; then
-    echo "WARN: $name has no address yet (not started?), skipping this pass" >&2
+    echo "WARN: $project/$name has no address yet (not started?), skipping this pass" >&2
     continue
   fi
 
-  cat > "$SCRATCH/${name}.caddy" <<CADDYEOF
+  cat > "$SCRATCH/${fname}" <<CADDYEOF
 ${domain} {
 	encode zstd gzip
 

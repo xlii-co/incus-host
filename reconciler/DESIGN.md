@@ -51,8 +51,18 @@ its own `/mcp*`-vs-everything-else split behind that).
 
 One pass, each run:
 
-1. Query `GET /1.0/instances?recursion=2` against the **local unix
-   socket** (`/var/lib/incus/unix.socket`), not the network HTTPS API.
+1. Query `GET /1.0/instances?recursion=2&all-projects=true` against the
+   **local unix socket** (`/var/lib/incus/unix.socket`), not the network
+   HTTPS API. `all-projects=true` is what lets a tenant project (e.g.
+   `nightscout`) self-register the same way `default`-project instances
+   always have — this was a real, confirmed blocker until 2026-09-17:
+   without it, moving an instance into a new project silently dropped its
+   route off `ingress` on the very next poll, no error anywhere. Each
+   returned instance carries its
+   own `project` field now, which flows through to the generated
+   filename (`<project>_<name>.caddy`, `default` left unprefixed to keep
+   every existing filename unchanged) so two projects that happen to name
+   an instance the same thing don't overwrite each other's route.
    **Be honest about what this actually grants**: root on the local socket
    is not a scoped, read-only view — it's the exact same unrestricted
    access the `incus` CLI itself has (create/delete/reconfigure anything,
@@ -80,7 +90,9 @@ One pass, each run:
 ## Render
 
 For each matched instance, write a route file at
-`generated/<instance-name>.caddy`:
+`generated/<instance-name>.caddy` — or `generated/<project>_<instance-name>.caddy`
+for anything outside the `default` project, so two projects naming an
+instance the same thing can't silently overwrite each other's route:
 
 ```caddyfile
 {{domain}} {
