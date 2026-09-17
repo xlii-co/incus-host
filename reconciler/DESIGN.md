@@ -264,6 +264,45 @@ larger open question of whether/when de-hosting the reconciler into its
 own container is worth the network attack surface it (re-)introduces.
 Worth prototyping before deciding, not assumed either way.
 
+## Future extension: opt-in SSO via `forward_auth`
+
+Not built, not decided — sketched 2026-09-16 as the natural next
+generalization of the same idea this whole reconciler is built on: a
+project shouldn't need a manual step to get something the platform
+already knows how to do. Today that's "get a public domain." The same
+argument applies to "require login before anyone reaches this" — right
+now that protection only exists hand-wired for `incus-ui`/`auth.xlii.co`
+themselves, nothing a tenant project can opt into.
+
+**The shape, if built:** one more registration key, `user.ingress.auth`,
+alongside `domain`/`port`/`enabled`. When set to `true`, the reconciler
+renders that instance's route with a `forward_auth` block pointing at
+Authelia instead of a bare `reverse_proxy` — the same mechanism, not a
+new one, that already protects `incus-ui` today, just generated instead
+of hand-written. This is a direct exception to the Registration
+contract's "nothing else, no path routing, no header rewriting" line
+above — the one deliberate addition worth making if this gets built, not
+a sign that line was wrong.
+
+**Two ways to do it, genuinely different in cost:**
+
+- **Broad policy (cheap):** one Authelia access-control rule — "a valid
+  session is enough for anything under `*.xlii.co`" — with Caddy's
+  `forward_auth` decision (present or absent per route) as the actual
+  per-app gate. The reconciler never touches Authelia's own config, only
+  Caddy's, same single-system blast radius as today's design.
+- **Per-app/per-group policy (expensive):** different user groups allowed
+  into different services. This needs the reconciler to also manage
+  Authelia's `access_control` rules, not just Caddy's routes — a second
+  system it writes to, a materially bigger scope than anything built so
+  far.
+
+**Recommendation, if this ever gets picked up:** the broad-policy version
+first, for the same reason the scoped-identity question above stays
+deferred — build the general, cheap case when something actually asks
+for "logged in or not," and only reach for per-app policies once a real
+workload needs finer control than that.
+
 ## Trigger
 
 Plain cron, not a timer unit, not a new container — matches this
