@@ -305,10 +305,26 @@ workload needs finer control than that.
 
 ## Trigger
 
-Plain cron, not a timer unit, not a new container — matches this
-project's stated stance on not growing systemd's footprint for new
-pieces. A 60-second poll interval, run as root on the host (needed for
-socket + `incus exec` access either way):
+**Superseded live on `incus.xlii.co` (2026-09-17): `tink daemon run`
+under systemd, not cron.** The original design (below, kept for
+history) was plain cron specifically to avoid growing systemd's
+footprint for a new piece — but `github.com/minihci/tink` (the Go port
+of this whole mechanism, `tink ingress reconcile`) turned that reasoning
+on its head once it needed to run as a *persistent process*: a
+persistent process genuinely needs real restart-on-crash/start-on-boot
+supervision, which is exactly what an init system is for, and generating
+units for whichever init system a host actually runs (systemd, OpenRC —
+see `tink daemon install`) is the same "don't assume any one host's init
+system" principle, just applied one layer down. Cut over live: ran `tink
+daemon run` side by side with cron-invoked `reconcile.sh` for two full
+passes against real production data, confirmed byte-identical output and
+zero unnecessary writes, then removed the cron entry. `reconcile.sh`
+itself stays in this repo unchanged, as the reference bash implementation
+this was ported from — it's just no longer what's actually running.
+
+**Original design, kept for history:** plain cron, not a timer unit, not
+a new container. A 60-second poll interval, run as root on the host
+(needed for socket + `incus exec` access either way):
 
 ```
 * * * * * /root/incus-host/reconciler/reconcile.sh >> /var/log/ingress-reconciler.log 2>&1
@@ -317,7 +333,9 @@ socket + `incus exec` access either way):
 No event-stream listener for v1 — a 60s worst-case registration delay is
 fine for what this actually serves (a homelab standing up new projects
 occasionally, not a system needing sub-second service discovery). Revisit
-only if that latency ever actually bites.
+only if that latency ever actually bites. (`tink daemon run --interval`
+still defaults to the same 60s, so this reasoning carries over unchanged
+— only the supervision mechanism changed, not the polling philosophy.)
 
 ## Failure modes worth having thought about before they happen
 
@@ -328,12 +346,13 @@ only if that latency ever actually bites.
   silently pick a winner.
 - **Instance deleted without deregistering first**: same as rename — its
   route just isn't in the next rebuilt set, gone within one poll.
-- **Reconciler script itself crashes mid-run**: cron just tries again in
-  60s; nothing it does is destructive if interrupted (renders to a
-  scratch dir first, only pushes/reloads after the full set is computed).
+- **Reconciler crashes mid-run**: cron (or, on `incus.xlii.co` now,
+  systemd's `Restart=on-failure`) just tries again on the next pass;
+  nothing it does is destructive if interrupted (renders to a scratch
+  dir first, only pushes/reloads after the full set is computed).
 - **`caddy reload` fails** (bad generated Caddyfile syntax somehow):
   Caddy's own reload semantics refuse a bad config and keep serving the
-  last-known-good one — log the failure, don't retry-loop, next cron tick
+  last-known-good one — log the failure, don't retry-loop, next pass
   will just try the same render again if the underlying cause hasn't
   changed.
 

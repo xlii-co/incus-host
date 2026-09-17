@@ -39,7 +39,7 @@ being true, look at OpenFGA instead of growing the scriptlet.
 | `scripts/generate-authelia-secrets.sh` | one-time per host: generates every secret via Authelia's own CLI |
 | `scripts/deploy.sh` | applies everything above to whatever host `incus` is pointed at |
 | `scripts/push-to-host.sh` | syncs this repo's tracked files to a host, for the scripts above to run there — see below |
-| `reconciler/reconcile.sh` | cron-run (`* * * * *`), self-registration: any instance can register a public route by setting `user.ingress.{domain,port,enabled}` on itself, no file to push and no restart — see `reconciler/DESIGN.md` for the full mechanism |
+| `reconciler/reconcile.sh` | reference bash implementation, self-registration: any instance can register a public route by setting `user.ingress.{domain,port,enabled}` on itself, no file to push and no restart — see `reconciler/DESIGN.md` for the full mechanism. On `incus.xlii.co` this is now actually run via `github.com/minihci/tink`'s `tink daemon run` (systemd-supervised), not this script directly |
 
 ## Apply order (fresh host)
 
