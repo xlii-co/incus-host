@@ -30,6 +30,7 @@ config:
   environment.ACME_EMAIL: "${ADMIN_EMAIL}"
   environment.INCUS_UI_DOMAIN: "${INCUS_UI_DOMAIN}"
   environment.INCUS_UI_ADDR: "${INCUS_UI_STATIC_IP}:80"
+  environment.INCUS_API_ADDR: "${INCUS_API_ADDR}"
   environment.AUTH_DOMAIN: "${AUTH_DOMAIN}"
   environment.AUTHELIA_ADDR: "${AUTHELIA_STATIC_IP}:9091"
 devices:

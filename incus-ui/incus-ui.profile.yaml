@@ -11,10 +11,11 @@
 #
 # Internal only: no proxy devices, no public cert. The shared `ingress`
 # instance (see ../ingress/) owns the host's public :80/:443 and
-# reverse-proxies ${INCUS_UI_DOMAIN} here, over the bridge. This instance's
-# own Caddy still does its /1.0*-vs-static-UI split and talks to the real
-# Incus API directly — that responsibility didn't move, only the public
-# TLS/domain termination did.
+# reverse-proxies ${INCUS_UI_DOMAIN} here, over the bridge. This instance
+# is a pure static-file server now — the /1.0*-vs-static-UI split (and the
+# real Incus API's own address) moved to ingress's own route
+# (ingress/routes/incus-ui.caddy), since that's a fact about this
+# deployment, not something the UI image itself should need to know.
 #
 # Static IP, not DHCP: ingress's route to this instance is by IP (see
 # ingress/routes/incus-ui.caddy), and this instance's address is also what
@@ -31,7 +32,6 @@ config:
   limits.cpu: "1"
   limits.memory: 512MiB
   environment.INCUS_UI_DOMAIN: "${INCUS_UI_DOMAIN}"
-  environment.INCUS_API_ADDR: "${INCUS_API_ADDR}"
 devices:
   eth0:
     type: nic
